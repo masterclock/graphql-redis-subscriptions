@@ -1,6 +1,8 @@
 import { RedisOptions, Redis as RedisClient } from 'ioredis';
 import { PubSubEngine } from 'graphql-subscriptions';
+import * as Ix from 'ix';
 import { PubSubAsyncIterator } from './pubsub-async-iterator';
+import { EventEmitter } from 'events';
 
 export interface PubSubRedisOptions {
   connection?: RedisOptions;
@@ -117,6 +119,14 @@ export class RedisPubSub implements PubSubEngine {
 
   public asyncIterator<T>(triggers: string | string[]): AsyncIterator<T> {
     return new PubSubAsyncIterator<T>(this, triggers);
+  }
+
+  public async asyncIterable<T>(triggers: string | string[]): Promise<AsyncIterable<T>> {
+    triggers = typeof triggers === 'string' ? [triggers] : triggers;
+    const emitter = new Ix.AsyncSink<T>();
+    const callback = (msg: any) => emitter.write(msg);
+    const ids = await Promise.all(triggers.map(trigger => this.subscribe(trigger, callback, {})));
+    return Ix.AsyncIterable.from(emitter).finally(() => ids.forEach(id => this.unsubscribe(id)));
   }
 
   public getSubscriber(): RedisClient {
